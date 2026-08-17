@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The King is Dead — jeu en ligne</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,600;1,400&family=Uncial+Antiqua&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>👑</text></svg>">
+</head>
+<body>
+
+<!-- ================= Accueil / salon ================= -->
+<div id="lobby" class="overlay on">
+  <div class="sheet">
+    <div class="braid"></div>
+    <div class="inner">
+      <h2>The King is Dead</h2>
+      <p class="sub">Seconde édition — le roi est mort, le royaume est divisé.</p>
+
+      <div id="lobbyHome">
+        <label for="pname">Votre nom</label>
+        <input id="pname" maxlength="18" placeholder="Votre nom" autocomplete="off">
+
+        <div class="actions">
+          <button class="primary" id="btnCreate">Créer une partie en ligne</button>
+          <button id="btnJoinForm">Rejoindre avec un code</button>
+          <button id="btnHotseat">Jouer sur un seul écran</button>
+        </div>
+
+        <div class="note">
+          <strong>En ligne :</strong> un joueur crée la partie et communique le code à quatre lettres aux trois autres,
+          qui ouvrent la même adresse et le saisissent. Chacun voit sa propre main ; le serveur arbitre les règles.<br>
+          <strong>Un seul écran :</strong> les quatre joueurs jouent à tour de rôle sur le même appareil, avec un voile
+          entre les tours pour préserver le secret des mains.
+        </div>
+        <div class="err" id="homeErr"></div>
+      </div>
+
+      <div id="lobbyJoin" style="display:none">
+        <label for="jcode">Code de la partie</label>
+        <input id="jcode" maxlength="4" placeholder="ABCD" style="text-transform:uppercase; letter-spacing:.3em; font-size:26px; text-align:center">
+        <div class="actions">
+          <button class="primary" id="btnJoin">Rejoindre</button>
+          <button id="btnBack1">Retour</button>
+        </div>
+        <div class="err" id="joinErr"></div>
+      </div>
+
+      <div id="lobbyHotseat" style="display:none">
+        <div class="row">
+          <div>
+            <label for="hcount">Nombre de joueurs</label>
+            <select id="hcount">
+              <option value="2">2 joueurs</option>
+              <option value="3">3 joueurs</option>
+              <option value="4" selected>4 joueurs</option>
+            </select>
+          </div>
+          <div id="hteamsWrap">
+            <label for="hteams">Mode à 4 joueurs</label>
+            <select id="hteams">
+              <option value="1" selected>Équipes de deux (règle officielle)</option>
+              <option value="0">Chacun pour soi (variante)</option>
+            </select>
+          </div>
+        </div>
+        <div class="row">
+          <div id="hw0"><label for="h0">Joueur 1</label><input id="h0" value="Joueur 1" maxlength="18"></div>
+          <div id="hw1"><label for="h1">Joueur 2</label><input id="h1" value="Joueur 2" maxlength="18"></div>
+        </div>
+        <div class="row">
+          <div id="hw2"><label for="h2">Joueur 3</label><input id="h2" value="Joueur 3" maxlength="18"></div>
+          <div id="hw3"><label for="h3">Joueur 4</label><input id="h3" value="Joueur 4" maxlength="18"></div>
+        </div>
+        <div class="note" id="hnote">En équipes : les joueurs 1 &amp; 3 affrontent les joueurs 2 &amp; 4.</div>
+        <div class="actions">
+          <button class="primary" id="btnStartHotseat">Commencer</button>
+          <button id="btnBack2">Retour</button>
+        </div>
+      </div>
+
+      <div id="lobbyRoom" style="display:none">
+        <p class="sub" style="margin-bottom:2px">Code de la partie — à communiquer aux autres joueurs</p>
+        <div class="code" id="roomCode">····</div>
+        <label>Places à table <small style="font-variant:normal;text-transform:none">(sens horaire — la partie se joue à 2, 3 ou 4)</small></label>
+        <div class="seatgrid" id="seats"></div>
+        <div id="optTeamsWrap" style="margin-top:10px">
+          <label for="optTeams" style="display:flex;align-items:center;gap:8px;font-variant:normal;text-transform:none;cursor:pointer">
+            <input type="checkbox" id="optTeams" checked style="width:auto;accent-color:#a8231d">
+            À 4 joueurs : équipes de deux, sièges opposés coéquipiers (règle officielle)
+          </label>
+        </div>
+        <div class="actions">
+          <button class="primary" id="btnStartOnline">Lancer la partie</button>
+          <button id="btnLeave">Quitter</button>
+        </div>
+        <div class="note" id="lanNote" style="display:none"></div>
+        <div class="note" id="roomNote"></div>
+        <div class="err" id="roomErr"></div>
+      </div>
+    </div>
+    <div class="braid"></div>
+  </div>
+</div>
+
+<!-- ================= Voile entre deux tours (mode un seul écran) ================= -->
+<div id="veil" class="overlay">
+  <div class="sheet" style="max-width:460px">
+    <div class="braid"></div>
+    <div class="inner" style="text-align:center">
+      <p class="sub" style="margin:0">Passez l'appareil à</p>
+      <div class="veil-name display" id="veilName">—</div>
+      <p class="sub" id="veilTeam"></p>
+      <button class="primary" id="btnReveal" style="margin-top:10px">Voir ma main</button>
+    </div>
+    <div class="braid"></div>
+  </div>
+</div>
+
+<!-- ================= Fin de partie ================= -->
+<div id="endscreen" class="overlay">
+  <div class="sheet">
+    <div class="braid"></div>
+    <div class="inner" id="endInner"></div>
+    <div class="braid"></div>
+  </div>
+</div>
+
+<!-- ================= Aide-mémoire des règles ================= -->
+<div id="rules" class="overlay">
+  <div class="sheet">
+    <div class="braid"></div>
+    <div class="inner" id="rulesInner"></div>
+    <div class="braid"></div>
+  </div>
+</div>
+
+<!-- ================= Table de jeu ================= -->
+<div id="app">
+  <div class="topbar">
+    <h1>The King is Dead</h1>
+    <span class="chip" id="chipMode">—</span>
+    <span class="chip" id="chipStruggle">—</span>
+    <span class="chip" id="chipInstab">—</span>
+    <span class="sep"></span>
+    <button class="ghost" id="btnRules">Règles</button>
+    <button class="ghost" id="btnQuit">Quitter</button>
+  </div>
+
+  <div class="layout">
+    <div class="board-pane" id="boardPane">
+      <div class="zoomctl">
+        <button id="zoomOut" title="Réduire">−</button>
+        <button id="zoomFit" title="Ajuster à la fenêtre">⤢</button>
+        <button id="zoomIn" title="Agrandir">+</button>
+      </div>
+      <div id="boardSvgWrap"></div>
+    </div>
+    <div class="side">
+      <div class="panel illuminated">
+        <h2>Cours <small>suivants recrutés par chaque joueur</small></h2>
+        <div class="body" id="players"></div>
+      </div>
+      <div class="panel illuminated">
+        <h2>Chronique</h2>
+        <div class="body"><div class="log" id="log"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="handbar">
+    <div class="prompt" id="prompt"></div>
+    <div class="hand" id="hand"></div>
+  </div>
+</div>
+
+<script src="vendor/qrcode.js"></script>
+<script type="module" src="ui.js"></script>
+</body>
+</html>
