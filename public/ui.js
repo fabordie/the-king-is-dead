@@ -14,6 +14,7 @@ import {
 } from './game.js';
 import { renderBoard, neighboursLabel } from './board.js';
 import { cardFace } from './cards.js';
+import { chooseAiMove } from './ai.js';
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
@@ -80,9 +81,18 @@ function hotseatSync() {
 $('#hcount').onchange = hotseatSync;
 $('#hteams').onchange = hotseatSync;
 
+let hsTypes = [];          // hotseat : 'humain' | 'ia' | 'ia-facile' par siège
+let aiTimer = null;
+
 $('#btnStartHotseat').onclick = () => {
   const n = +$('#hcount').value;
-  const names = Array.from({ length: n }, (_, i) => ($('#h' + i).value || '').trim() || `Joueur ${i + 1}`);
+  hsTypes = Array.from({ length: n }, (_, i) => $('#ht' + i).value);
+  const names = Array.from({ length: n }, (_, i) => {
+    let nm = ($('#h' + i).value || '').trim() || `Joueur ${i + 1}`;
+    // Un siège IA garde son nom personnalisé, mais le nom par défaut devient parlant.
+    if (hsTypes[i] !== 'humain' && nm === `Joueur ${i + 1}`) nm = `IA ${i + 1}`;
+    return nm;
+  });
   mode = 'hotseat';
   full = createGame(names.map((nm, i) => ({ id: 'p' + i, name: nm })), (Math.random() * 1e9) | 0,
     { teams: $('#hteams').value === '1' });
@@ -91,6 +101,42 @@ $('#btnStartHotseat').onclick = () => {
   $('#app').classList.add('on');
   refresh();
 };
+
+const isAiSeat = (seat) => mode === 'hotseat' && hsTypes[seat] && hsTypes[seat] !== 'humain';
+const humanSeats = () => full.players.map((p) => p.seat).filter((s) => !isAiSeat(s));
+
+/** Siège dont on montre la table pendant que les IA jouent. */
+function watchSeat() {
+  const humans = humanSeats();
+  if (humans.length === 0) return 0;                     // spectacle : IA contre IA
+  if (humans.length === 1) return humans[0];
+  return revealed !== null && humans.includes(revealed) ? revealed : humans[0];
+}
+
+function scheduleAi() {
+  if (aiTimer) return;
+  aiTimer = setTimeout(() => {
+    aiTimer = null;
+    if (mode !== 'hotseat' || !full || full.phase === 'finished') return;
+    if (!isAiSeat(full.current)) return;
+    const level = hsTypes[full.current] === 'ia-facile' ? 'facile' : 'normale';
+    let mv = null;
+    try { mv = chooseAiMove(full, full.current, level); } catch { /* repli plus bas */ }
+    try {
+      if (mv) applyMove(full, full.current, mv);
+      else if (full.phase === 'summon') {
+        const src = summonSources(full)[0];
+        applyMove(full, full.current, { type: 'summon', region: src.region, faction: src.faction });
+      } else {
+        applyMove(full, full.current, { type: 'pass' });
+      }
+    } catch {
+      try { applyMove(full, full.current, { type: 'pass' }); } catch { /* rien à faire */ }
+    }
+    if (full.phase === 'finished') { refresh(); showEnd(); return; }
+    refresh();
+  }, 650);
+}
 
 $('#btnReveal').onclick = () => { revealed = full.current; show('#veil', false); refresh(); };
 
@@ -200,15 +246,30 @@ function drawQr(el, text) {
 function renderSeats() {
   const el = $('#seats');
   const teamsOn = $('#optTeams').checked;
+  const amHost = room.host === myId;
   el.innerHTML = [0, 1, 2, 3].map((s) => {
     const occ = room.players.find((p) => p.seat === s);
     const mine = occ && occ.id === myId;
     const cls = ['seat', occ && !mine ? 'taken' : '', mine ? 'mine' : ''].filter(Boolean).join(' ');
+    let body;
+    if (!occ) {
+      body = `<em style="opacity:.55">libre</em>${amHost ? ` <button class="botbtn" data-addbot="${s}">+ IA</button>` : ''}`;
+    } else if (occ.isBot) {
+      body = `${esc(occ.name)} <span class="bot-tag">ia</span>${amHost ? ` <button class="botbtn" data-removebot="${s}">retirer</button>` : ''}`;
+    } else {
+      body = esc(occ.name) + (occ.connected ? '' : ' <em style="opacity:.6">(déconnecté)</em>');
+    }
     return `<div class="${cls}" data-seat="${s}">
       <span class="sn">Siège ${s + 1} ${teamsOn ? `<span class="tm">équipe ${s % 2 === 0 ? 'A' : 'B'}</span>` : ''}</span>
-      ${occ ? esc(occ.name) + (occ.connected ? '' : ' <em style="opacity:.6">(déconnecté)</em>') : '<em style="opacity:.55">libre</em>'}
+      ${body}
     </div>`;
   }).join('');
+  el.querySelectorAll('[data-addbot]').forEach((b) => {
+    b.onclick = (e) => { e.stopPropagation(); sendWs({ t: 'addbot', seat: +b.dataset.addbot }); };
+  });
+  el.querySelectorAll('[data-removebot]').forEach((b) => {
+    b.onclick = (e) => { e.stopPropagation(); sendWs({ t: 'removebot', seat: +b.dataset.removebot }); };
+  });
   el.querySelectorAll('.seat').forEach((d) => {
     d.onclick = () => {
       const s = +d.dataset.seat;
@@ -234,14 +295,30 @@ $('#optTeams') && ($('#optTeams').onchange = () => room && renderSeats());
 
 function refresh() {
   if (mode !== 'hotseat') return;
+
   if (full.phase === 'finished') {
     revealed = null;
-    view = viewFor(full, full.current);
-    mySeat = full.current;
+    view = viewFor(full, watchSeat());
+    mySeat = watchSeat();
     render();
     return;
   }
-  if (revealed !== full.current) {
+
+  // Tour d'une IA : on regarde la table depuis le siège du (dernier) humain,
+  // sans voile, et l'IA joue toute seule après un court délai.
+  if (isAiSeat(full.current)) {
+    const w = watchSeat();
+    view = viewFor(full, w);
+    mySeat = w;
+    render();
+    scheduleAi();
+    return;
+  }
+
+  // Tour d'un humain. Le voile ne sert que s'il y a plusieurs humains :
+  // seul contre des IA, on garde la main visible en permanence.
+  const humans = humanSeats();
+  if (humans.length > 1 && revealed !== full.current) {
     view = viewFor(full, full.current);
     mySeat = full.current;
     render();
@@ -255,6 +332,7 @@ function refresh() {
     show('#veil', true);
     return;
   }
+  revealed = full.current;
   view = viewFor(full, revealed);
   mySeat = revealed;
   render();

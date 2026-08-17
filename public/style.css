@@ -391,6 +391,15 @@ button.ghost:hover:not(:disabled) { background: rgba(240,227,196,.12); }
 .sheet .note { font-size: 13px; color: var(--ink-soft); margin-top: 14px; line-height: 1.5; }
 .sheet .err { color: var(--rubric); margin-top: 10px; min-height: 20px; font-size: 14px; }
 
+.seatrow { display: flex; gap: 6px; }
+.seatrow input { flex: 1; min-width: 0; }
+.typesel { width: auto !important; flex: 0 0 auto; font-size: 14px !important; }
+.seat .botbtn {
+  float: right; font-size: 12px; padding: 2px 9px; margin-left: 6px;
+  background: linear-gradient(180deg, #dfe7f2, #b9c6da); border-color: #3d5578; color: #22314a;
+}
+.seat .bot-tag { font-size: 11px; color: var(--azure); font-variant: small-caps; }
+
 .seatgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; }
 .seat {
   padding: 9px 12px; border: 1px solid #8d7346; border-radius: 3px;
