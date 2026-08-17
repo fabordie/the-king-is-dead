@@ -15,6 +15,7 @@ import { randomUUID, randomBytes } from 'node:crypto';
 import { WebSocketServer } from 'ws';
 
 import { createGame, applyMove, viewFor } from './public/game.js';
+import { chooseAiMove } from './public/ai.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(__dirname, 'public');
@@ -118,8 +119,9 @@ class Room {
   find(id) { return this.players.find((p) => p.id === id); }
 
   broadcastRoom() {
-    const players = this.players.map((p) => ({ id: p.id, name: p.name, seat: p.seat, connected: p.connected }));
+    const players = this.players.map((p) => ({ id: p.id, name: p.name, seat: p.seat, connected: p.connected, isBot: !!p.isBot }));
     for (const p of this.players) {
+      if (p.isBot) continue;
       send(p.ws, { t: 'room', code: this.code, youId: p.id, token: p.token, players, host: this.host, started: this.started });
     }
   }
@@ -127,10 +129,34 @@ class Room {
   broadcastState() {
     if (!this.state) return;
     for (const p of this.players) {
+      if (p.isBot) continue;
       const seat = this.seatOfPlayer.get(p.id);
       if (seat === undefined) continue;
       send(p.ws, { t: 'state', view: viewFor(this.state, seat) });
     }
+  }
+
+  /** Fait jouer les IA tant que c'est leur tour, avec un délai naturel. */
+  pumpBots() {
+    if (this.botTimer || !this.state || this.state.phase === 'finished') return;
+    const pl = this.enginePlayers && this.enginePlayers[this.state.current];
+    if (!pl || !pl.isBot) return;
+    this.botTimer = setTimeout(() => {
+      this.botTimer = null;
+      const st = this.state;
+      if (!st || st.phase === 'finished') return;
+      const cur = this.enginePlayers[st.current];
+      if (!cur || !cur.isBot) return;
+      try {
+        const mv = chooseAiMove(st, st.current, cur.level || 'normale');
+        applyMove(st, st.current, mv);
+      } catch {
+        try { applyMove(st, st.current, { type: 'pass' }); } catch { /* rien */ }
+      }
+      this.touched = Date.now();
+      this.broadcastState();
+      this.pumpBots();
+    }, 800);
   }
 }
 
@@ -175,6 +201,8 @@ function handle(ws, msg) {
     case 'join': return onJoin(ws, msg);
     case 'rejoin': return onRejoin(ws, msg);
     case 'seat': return onSeat(ws, msg);
+    case 'addbot': return onAddBot(ws, msg);
+    case 'removebot': return onRemoveBot(ws, msg);
     case 'start': return onStart(ws, msg);
     case 'move': return onMove(ws, msg);
     default: return fail(ws, 'Message inconnu.');
@@ -238,6 +266,32 @@ function onSeat(ws, msg) {
   room.broadcastRoom();
 }
 
+function onAddBot(ws, msg) {
+  const room = rooms.get(ws.ctx.roomCode);
+  if (!room || room.started) return fail(ws, 'Impossible d\'ajouter une IA maintenant.');
+  if (room.host !== ws.ctx.playerId) return fail(ws, "Seul l'hôte peut ajouter une IA.");
+  const seat = Number(msg.seat);
+  if (!(seat >= 0 && seat <= 3)) return fail(ws, 'Siège invalide.');
+  if (room.players.some((p) => p.seat === seat)) return fail(ws, 'Ce siège est occupé.');
+  if (room.players.length >= 4) return fail(ws, 'La table est complète.');
+  const n = room.players.filter((p) => p.isBot).length + 1;
+  room.players.push({
+    id: randomUUID(), token: null, name: `IA ${n}`, seat,
+    ws: null, connected: true, isBot: true, level: msg.level === 'facile' ? 'facile' : 'normale',
+  });
+  room.broadcastRoom();
+}
+
+function onRemoveBot(ws, msg) {
+  const room = rooms.get(ws.ctx.roomCode);
+  if (!room || room.started) return fail(ws, 'Impossible de retirer une IA maintenant.');
+  if (room.host !== ws.ctx.playerId) return fail(ws, "Seul l'hôte peut retirer une IA.");
+  const i = room.players.findIndex((p) => p.isBot && p.seat === Number(msg.seat));
+  if (i === -1) return fail(ws, 'Aucune IA sur ce siège.');
+  room.players.splice(i, 1);
+  room.broadcastRoom();
+}
+
 function onStart(ws, msg) {
   const room = rooms.get(ws.ctx.roomCode);
   if (!room) return fail(ws, 'Salon introuvable.');
@@ -250,12 +304,16 @@ function onStart(ws, msg) {
   // Les sièges sont compactés en 0..n-1 en conservant l'ordre horaire :
   // à quatre, les sièges 1 et 3 restent opposés, donc coéquipiers.
   // L'hôte choisit le mode à quatre : équipes (officiel) ou chacun pour soi.
+  if (!seated.some((p) => !p.isBot)) return fail(ws, 'Il faut au moins un joueur humain.');
+
   room.state = createGame(seated.map((p) => ({ id: p.id, name: p.name })),
     (Math.random() * 1e9) | 0, { teams: msg.teams !== false });
   seated.forEach((p, i) => room.seatOfPlayer.set(p.id, i));
+  room.enginePlayers = seated;
   room.broadcastRoom();
   room.broadcastState();
-  console.log(`[${room.code}] partie lancée — ${seated.map((p) => p.name).join(', ')}`);
+  console.log(`[${room.code}] partie lancée — ${seated.map((p) => p.name + (p.isBot ? ' (IA)' : '')).join(', ')}`);
+  room.pumpBots();
 }
 
 function onMove(ws, msg) {
@@ -270,6 +328,7 @@ function onMove(ws, msg) {
   }
   room.touched = Date.now();
   room.broadcastState();
+  room.pumpBots();
 }
 
 /* ------------------------------------------------------------------ */
