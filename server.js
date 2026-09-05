@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID, randomBytes } from 'node:crypto';
 import { WebSocketServer } from 'ws';
 
-import { createGame, applyMove, viewFor } from './public/game.js';
+import { createGame, applyMove, viewFor, applyTheme } from './public/game.js';
 import { chooseAiMove } from './public/ai.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -94,6 +94,72 @@ const server = http.createServer((req, res) => {
 
 /** @type {Map<string, Room>} */
 const rooms = new Map();
+
+/* ------------------------------------------------------------------ */
+/* Sauvegarde : les salons sont écrits sur disque à chaque changement   */
+/* (avec un léger délai de regroupement) et restaurés au démarrage.     */
+/* Une partie survit ainsi à un crash ou à un redémarrage du serveur.   */
+/* ------------------------------------------------------------------ */
+
+const SAVE_FILE = process.env.SAVE_FILE || path.join(__dirname, 'parties.json');
+let saveTimer = null;
+
+function scheduleSave() {
+  if (saveTimer) return;
+  saveTimer = setTimeout(saveRooms, 1500);
+}
+
+function saveRooms() {
+  saveTimer = null;
+  try {
+    const data = [];
+    for (const room of rooms.values()) {
+      data.push({
+        code: room.code,
+        host: room.host,
+        touched: room.touched,
+        state: room.state,
+        players: room.players.map((p) => ({
+          id: p.id, token: p.token, name: p.name, seat: p.seat,
+          isBot: !!p.isBot, level: p.level,
+        })),
+        seatOfPlayer: [...room.seatOfPlayer],
+        chat: room.chat,
+      });
+    }
+    fs.writeFileSync(SAVE_FILE, JSON.stringify(data));
+  } catch (e) {
+    console.error('sauvegarde impossible :', e.message);
+  }
+}
+
+function loadRooms() {
+  try {
+    if (!fs.existsSync(SAVE_FILE)) return;
+    const data = JSON.parse(fs.readFileSync(SAVE_FILE, 'utf8'));
+    for (const r of data) {
+      const room = new Room(r.code);
+      room.host = r.host;
+      room.touched = r.touched || Date.now();
+      room.state = r.state;
+      room.players = r.players.map((p) => ({ ...p, ws: null, connected: !!p.isBot }));
+      room.seatOfPlayer = new Map(r.seatOfPlayer);
+      room.chat = r.chat || [];
+      // Le temps d'arrêt du serveur n'est facturé à personne.
+      if (room.state && room.state.clock) room.state.clock.turnStart = Date.now();
+      room.enginePlayers = room.players.filter((p) => p.seat !== null).sort((a, b) => a.seat - b.seat);
+      rooms.set(r.code, room);
+      if (room.state && room.state.phase !== 'finished') room.pumpBots();
+    }
+    if (rooms.size) console.log(`${rooms.size} salon(s) restauré(s) — les joueurs reprennent leur partie en rechargeant leur page.`);
+  } catch (e) {
+    console.error('restauration impossible :', e.message);
+  }
+}
+
+for (const sig of ['SIGINT', 'SIGTERM']) {
+  process.on(sig, () => { if (saveTimer) clearTimeout(saveTimer); saveRooms(); process.exit(0); });
+}
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // sans I ni O, pour la lecture au téléphone
 
 function newCode() {
@@ -107,6 +173,7 @@ function newCode() {
 class Room {
   constructor(code) {
     this.code = code;
+    this.chat = [];         // messagerie du salon (60 derniers messages)
     this.players = [];      // { id, token, name, seat, ws, connected }
     this.host = null;
     this.state = null;      // état de partie une fois lancée
@@ -119,6 +186,7 @@ class Room {
   find(id) { return this.players.find((p) => p.id === id); }
 
   broadcastRoom() {
+    scheduleSave();
     const players = this.players.map((p) => ({ id: p.id, name: p.name, seat: p.seat, connected: p.connected, isBot: !!p.isBot }));
     for (const p of this.players) {
       if (p.isBot) continue;
@@ -128,6 +196,7 @@ class Room {
 
   broadcastState() {
     if (!this.state) return;
+    scheduleSave();
     for (const p of this.players) {
       if (p.isBot) continue;
       const seat = this.seatOfPlayer.get(p.id);
@@ -148,6 +217,7 @@ class Room {
       const cur = this.enginePlayers[st.current];
       if (!cur || !cur.isBot) return;
       try {
+        applyTheme(st.themeId);
         const mv = chooseAiMove(st, st.current, cur.level || 'normale');
         applyMove(st, st.current, mv);
       } catch {
@@ -174,8 +244,21 @@ const wss = new WebSocketServer({ server });
 // le serveur WebSocket et fait planter le processus avant notre message propre.
 wss.on('error', () => { /* traitée par server.on('error') */ });
 
+// Les navigateurs mobiles coupent souvent le WebSocket sans le fermer
+// proprement (veille de l'écran). Un ping toutes les 30 s repère les
+// connexions mortes ; le joueur revient par la reconnexion automatique.
+setInterval(() => {
+  for (const ws of wss.clients) {
+    if (ws.isAlive === false) { try { ws.terminate(); } catch { /* déjà close */ } continue; }
+    ws.isAlive = false;
+    try { ws.ping(); } catch { /* ignoré */ }
+  }
+}, 30000);
+
 wss.on('connection', (ws) => {
   ws.ctx = { roomCode: null, playerId: null };
+  ws.isAlive = true;
+  ws.on('pong', () => { ws.isAlive = true; });
 
   ws.on('message', (raw) => {
     let msg;
@@ -205,6 +288,7 @@ function handle(ws, msg) {
     case 'removebot': return onRemoveBot(ws, msg);
     case 'start': return onStart(ws, msg);
     case 'move': return onMove(ws, msg);
+    case 'chat': return onChat(ws, msg);
     default: return fail(ws, 'Message inconnu.');
   }
 }
@@ -218,6 +302,7 @@ function attach(ws, room, player) {
   player.ws = ws;
   player.connected = true;
   room.touched = Date.now();
+  if (room.chat.length) send(ws, { t: 'chatlog', log: room.chat });
 }
 
 function onCreate(ws, msg) {
@@ -307,7 +392,7 @@ function onStart(ws, msg) {
   if (!seated.some((p) => !p.isBot)) return fail(ws, 'Il faut au moins un joueur humain.');
 
   room.state = createGame(seated.map((p) => ({ id: p.id, name: p.name })),
-    (Math.random() * 1e9) | 0, { teams: msg.teams !== false });
+    (Math.random() * 1e9) | 0, { teams: msg.teams !== false, theme: msg.theme });
   seated.forEach((p, i) => room.seatOfPlayer.set(p.id, i));
   room.enginePlayers = seated;
   room.broadcastRoom();
@@ -316,12 +401,30 @@ function onStart(ws, msg) {
   room.pumpBots();
 }
 
+function onChat(ws, msg) {
+  const room = rooms.get(ws.ctx.roomCode);
+  if (!room) return;
+  const me = room.find(ws.ctx.playerId);
+  if (!me || me.isBot) return;
+  const text = String(msg.text || '').trim().slice(0, 300);
+  if (!text) return;
+  const entry = { from: me.name, seat: me.seat, text, ts: Date.now() };
+  room.chat.push(entry);
+  if (room.chat.length > 60) room.chat.shift();
+  room.touched = Date.now();
+  scheduleSave();
+  for (const p of room.players) {
+    if (!p.isBot) send(p.ws, { t: 'chat', ...entry });
+  }
+}
+
 function onMove(ws, msg) {
   const room = rooms.get(ws.ctx.roomCode);
   if (!room || !room.started) return fail(ws, 'Aucune partie en cours.');
   const seat = room.seatOfPlayer.get(ws.ctx.playerId);
   if (seat === undefined) return fail(ws, "Vous n'êtes pas assis à cette table.");
   try {
+    applyTheme(room.state.themeId);
     applyMove(room.state, seat, msg.move);
   } catch (e) {
     return fail(ws, e.message);
@@ -350,6 +453,8 @@ server.on('error', (err) => {
   }
   throw err;
 });
+
+loadRooms();
 
 server.listen(PORT, () => {
   console.log(`The King is Dead — serveur prêt sur http://localhost:${PORT}`);
