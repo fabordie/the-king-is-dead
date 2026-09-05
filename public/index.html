@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,600;1,400&family=Uncial+Antiqua&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&text=%E5%B9%BD%E5%B7%9E%E5%86%80%E5%8F%B8%E9%9A%B6%E8%B1%AB%E7%9B%8A%E8%8D%86%E6%89%AC%E4%BA%A4%E6%99%8B%E9%AD%8F%E8%9C%80%E5%90%B4%E4%B8%89%E5%9B%BD%E4%B9%8B%E5%9B%BE&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>👑</text></svg>">
 </head>
@@ -52,6 +53,13 @@
       <div id="lobbyHotseat" style="display:none">
         <div class="row">
           <div>
+            <label for="htheme">Époque</label>
+            <select id="htheme">
+              <option value="britain" selected>Angleterre médiévale</option>
+              <option value="sanguo">Chine des Trois Royaumes</option>
+            </select>
+          </div>
+          <div>
             <label for="hcount">Nombre de joueurs</label>
             <select id="hcount">
               <option value="2">2 joueurs</option>
@@ -95,6 +103,13 @@
         <div class="code" id="roomCode">····</div>
         <label>Places à table <small style="font-variant:normal;text-transform:none">(sens horaire — la partie se joue à 2, 3 ou 4)</small></label>
         <div class="seatgrid" id="seats"></div>
+        <div id="optThemeWrap" style="margin-top:10px">
+          <label for="optTheme">Époque</label>
+          <select id="optTheme">
+            <option value="britain" selected>Angleterre médiévale</option>
+            <option value="sanguo">Chine des Trois Royaumes</option>
+          </select>
+        </div>
         <div id="optTeamsWrap" style="margin-top:10px">
           <label for="optTeams" style="display:flex;align-items:center;gap:8px;font-variant:normal;text-transform:none;cursor:pointer">
             <input type="checkbox" id="optTeams" checked style="width:auto;accent-color:#a8231d">
@@ -153,10 +168,13 @@
     <span class="chip" id="chipMode">—</span>
     <span class="chip" id="chipStruggle">—</span>
     <span class="chip" id="chipInstab">—</span>
+    <span class="chip" id="chipConn" style="display:none">—</span>
     <span class="sep"></span>
     <button class="ghost" id="btnRules">Règles</button>
     <button class="ghost" id="btnQuit">Quitter</button>
   </div>
+
+  <div class="promptbar"><div class="prompt" id="prompt"></div></div>
 
   <div class="layout">
     <div class="board-pane" id="boardPane">
@@ -169,19 +187,28 @@
     </div>
     <div class="side">
       <div class="panel illuminated">
-        <h2>Cours <small>suivants recrutés par chaque joueur</small></h2>
-        <div class="body" id="players"></div>
+        <h2>Votre main</h2>
+        <div class="body"><div class="hand" id="hand"></div></div>
       </div>
       <div class="panel illuminated">
-        <h2>Chronique</h2>
+        <h2>Cours <small>suivants recrutés</small></h2>
+        <div class="body" id="players"></div>
+      </div>
+      <div class="panel illuminated" id="chatPanel" style="display:none">
+        <h2>Messagerie <small>visible de toute la table</small></h2>
+        <div class="body">
+          <div class="chatlog" id="chatlog"></div>
+          <div class="chatrow">
+            <input id="chatIn" maxlength="300" placeholder="Votre message…" autocomplete="off">
+            <button id="chatSend">Envoyer</button>
+          </div>
+        </div>
+      </div>
+      <div class="panel illuminated">
+        <h2>Chronique <small>dernier tour de table</small></h2>
         <div class="body"><div class="log" id="log"></div></div>
       </div>
     </div>
-  </div>
-
-  <div class="handbar">
-    <div class="prompt" id="prompt"></div>
-    <div class="hand" id="hand"></div>
   </div>
 </div>
 

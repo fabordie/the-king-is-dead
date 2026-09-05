@@ -7,8 +7,9 @@
  * tracé de côte Natural Earth découpé selon les frontières du plateau.
  */
 
-import { REGIONS, REGION_IDS, FACTIONS, FACTION_INFO, ADJACENCY } from './game.js';
-import { MAP, FRANCE, VIEWBOX as VB } from './map-data.js';
+import { REGIONS, REGION_IDS, FACTIONS, FACTION_INFO, ADJACENCY, THEMES } from './game.js';
+import { MAP as MAP_BRITAIN, FRANCE, VIEWBOX as VB } from './map-data.js';
+import { MAP as MAP_SANGUO, ENEMY as ENEMY_SANGUO, CHINA_OUTLINE, INK as INK_DECOR } from './map-data-sanguo.js';
 
 export const VIEWBOX = VB;
 
@@ -79,14 +80,68 @@ function defs() {
       <path d="M9,3 L13,9 L9,15 L5,9 Z" fill="none" stroke="#a05a54" stroke-width="1.6"/>
     </pattern>
 
+    <radialGradient id="silk" cx="40%" cy="24%" r="95%">
+      <stop offset="0%" stop-color="#f6eed4"/>
+      <stop offset="55%" stop-color="#eee2c0"/>
+      <stop offset="100%" stop-color="#dcc99b"/>
+    </radialGradient>
+    <radialGradient id="agedpaper" cx="42%" cy="35%" r="100%">
+      <stop offset="0%" stop-color="#e4c184"/>
+      <stop offset="45%" stop-color="#d4a763"/>
+      <stop offset="80%" stop-color="#b98a47"/>
+      <stop offset="100%" stop-color="#9a6d33"/>
+    </radialGradient>
+    <radialGradient id="stain" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#7d5822" stop-opacity="0.22"/>
+      <stop offset="70%" stop-color="#7d5822" stop-opacity="0.10"/>
+      <stop offset="100%" stop-color="#7d5822" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="waves" width="64" height="34" patternUnits="userSpaceOnUse">
+      <path d="M0,14 Q8,4 16,14 T32,14 T48,14 T64,14" fill="none" stroke="#a99263" stroke-width="1" opacity="0.45"/>
+      <path d="M-16,31 Q-8,21 0,31 T16,31 T32,31 T48,31 T64,31 T80,31" fill="none" stroke="#a99263" stroke-width="1" opacity="0.45"/>
+    </pattern>
+    <pattern id="meander" width="22" height="${FRAME}" patternUnits="userSpaceOnUse">
+      <rect width="22" height="${FRAME}" fill="#8d2f26"/>
+      <path d="M1,16 H6 V6 H18 V16 H12 V10" fill="none" stroke="#d9a521" stroke-width="2"/>
+      <line x1="0" y1="2.4" x2="22" y2="2.4" stroke="#d9a521" stroke-width="1.4"/>
+      <line x1="0" y1="${FRAME - 2.4}" x2="22" y2="${FRAME - 2.4}" stroke="#d9a521" stroke-width="1.4"/>
+    </pattern>
+
     <clipPath id="mapClip">
       <rect x="${MAP_BOX.x}" y="${MAP_BOX.y}" width="${MAP_BOX.w}" height="${MAP_BOX.h}"/>
     </clipPath>
   </defs>`;
 }
 
-/** Le fond : parchemin, lignes de rhumb, grain. */
-function vellum() {
+/** Nuage ruyi stylisé, comme sur les peintures et cartes chinoises. */
+function cloudMotif(x, y, k = 1) {
+  const t = (a, b) => `${(x + a * k).toFixed(1)},${(y + b * k).toFixed(1)}`;
+  return `<g fill="none" stroke="#a08a58" stroke-width="${(1.7 * k).toFixed(1)}" opacity="0.38" stroke-linecap="round">
+    <path d="M${t(-34, 6)} Q${t(-48, 6)} ${t(-46, -6)} Q${t(-44, -16)} ${t(-30, -14)} Q${t(-28, -26)} ${t(-13, -23)} Q${t(-10, -34)} ${t(5, -29)} Q${t(19, -34)} ${t(23, -21)} Q${t(37, -21)} ${t(35, -9)} Q${t(45, -3)} ${t(37, 5)} Q${t(30, 11)} ${t(18, 6)} Z"/>
+    <path d="M${t(-8, -8)} q${(9 * k).toFixed(1)},${(-11 * k).toFixed(1)} ${(18 * k).toFixed(1)},0 q${(-9 * k).toFixed(1)},${(9 * k).toFixed(1)} ${(-18 * k).toFixed(1)},0"/>
+  </g>`;
+}
+
+/** Le fond : parchemin et lignes de rhumb, ou soie et vagues selon le thème. */
+function vellum(G) {
+  if (G && G.style === 'sanguo') {
+    // Papier doré vieilli, à la façon des cartes chinoises anciennes.
+    let s = `<rect x="0" y="0" width="1180" height="1180" fill="url(#agedpaper)"/>`;
+    // Taches d'âge et brunissures, disposées une fois pour toutes.
+    const stains = [[150, 220, 130], [980, 160, 150], [220, 950, 170], [960, 990, 120],
+      [560, 80, 90], [90, 600, 110], [1100, 620, 100], [640, 1120, 130]];
+    for (const [sx, sy, sr] of stains) {
+      s += `<circle cx="${sx}" cy="${sy}" r="${sr}" fill="url(#stain)"/>`;
+    }
+    // Quadrillage discret, comme sur la carte de référence.
+    s += `<g stroke="#8a6a35" stroke-width="0.7" opacity="0.22">`;
+    for (let x = 44; x <= 1136; x += 78) s += `<line x1="${x}" y1="44" x2="${x}" y2="1136"/>`;
+    for (let y = 44; y <= 1136; y += 78) s += `<line x1="44" y1="${y}" x2="1136" y2="${y}"/>`;
+    s += `</g>`;
+    s += cloudMotif(180, 140, 1.0) + cloudMotif(650, 110, 0.8) + cloudMotif(140, 1030, 0.9);
+    s += `<rect x="0" y="0" width="1180" height="1180" filter="url(#grain)"/>`;
+    return s;
+  }
   let s = `<rect x="0" y="0" width="1180" height="1180" fill="url(#vellum)"/>`;
   s += `<g stroke="#7d6party" stroke-width="0.55" opacity="0.4">`.replace('#7d6party', '#7d6a45');
   const hubs = [[400, 300], [400, 860], [120, 580], [690, 580], [400, 580]];
@@ -104,9 +159,22 @@ function vellum() {
   return s;
 }
 
-/** Bordure enluminée : ruban doré à rinceaux et rosaces d'angle. */
-function frame() {
+/** Bordure enluminée, ou bande à méandre (回纹) et sceaux d'angle. */
+function frame(G) {
   const h = FRAME / 2;
+  if (G && G.style === 'sanguo') {
+    let s = `<rect x="${h}" y="${h}" width="${1180 - FRAME}" height="${1180 - FRAME}"
+        fill="none" stroke="url(#meander)" stroke-width="${FRAME}"/>`;
+    s += `<rect x="${FRAME}" y="${FRAME}" width="${1180 - 2 * FRAME}" height="${1180 - 2 * FRAME}"
+        fill="none" stroke="#6b1f18" stroke-width="1.6"/>`;
+    s += `<rect x="1" y="1" width="1178" height="1178" fill="none" stroke="#5d1c16" stroke-width="2"/>`;
+    for (const [cx, cy] of [[FRAME, FRAME], [1180 - FRAME, FRAME], [FRAME, 1180 - FRAME], [1180 - FRAME, 1180 - FRAME]]) {
+      s += `<rect x="${cx - 15}" y="${cy - 15}" width="30" height="30" rx="4" fill="#b3382c" stroke="#5d1c16" stroke-width="2"/>
+        <rect x="${cx - 9}" y="${cy - 9}" width="18" height="18" fill="none" stroke="#f0dfae" stroke-width="1.8"/>
+        <rect x="${cx - 4}" y="${cy - 4}" width="8" height="8" fill="#f0dfae"/>`;
+    }
+    return s;
+  }
   let s = `<rect x="${h}" y="${h}" width="${1180 - FRAME}" height="${1180 - FRAME}"
       fill="none" stroke="url(#illum)" stroke-width="${FRAME}"/>`;
   s += `<rect x="${FRAME}" y="${FRAME}" width="${1180 - 2 * FRAME}" height="${1180 - 2 * FRAME}"
@@ -118,6 +186,60 @@ function frame() {
       <circle cx="${cx}" cy="${cy}" r="3" fill="#f0dfae"/>`;
   }
   return s;
+}
+
+/** Cartouche chinois : caractères en grand, romanisation dessous. */
+function plaque(x, y, hanzi, roman) {
+  const w = Math.max(100, roman.length * 9.5 + 26);
+  const h = 60;
+  return `<g class="plaquewrap" transform="translate(${x} ${y})">
+    <rect x="${-w / 2}" y="${-h / 2}" width="${w}" height="${h}" rx="4" fill="#f7efd9" stroke="#8d2f26" stroke-width="3.5" filter="url(#soft)"/>
+    <rect x="${-w / 2 + 4.5}" y="${-h / 2 + 4.5}" width="${w - 9}" height="${h - 9}" rx="2" fill="none" stroke="#c9a227" stroke-width="1.2" opacity="0.9"/>
+    <text x="0" y="${-h / 2 + 29}" text-anchor="middle" class="cjk" style="font-size:27px">${hanzi}</text>
+    <text x="0" y="${h / 2 - 9}" text-anchor="middle" class="plaque-roman">${esc(roman)}</text>
+  </g>`;
+}
+
+/** Géométrie et habillage propres au thème de la partie. */
+function geo(state) {
+  if (state.themeId === 'sanguo') {
+    const th = THEMES.sanguo;
+    return {
+      style: 'sanguo',
+      MAP: MAP_SANGUO,
+      outline: CHINA_OUTLINE,
+      hanzi: th.hanzi,
+      fhanzi: { scottish: th.factions.scottish.hanzi, welsh: th.factions.welsh.hanzi, english: th.factions.english.hanzi },
+      enemy: { d: ENEMY_SANGUO.d, label: ENEMY_SANGUO.label, discs: ENEMY_SANGUO.discs, sites: ENEMY_SANGUO.sites, hanzi: th.enemy.hanzi },
+      glyph: pagoda,
+    };
+  }
+  return {
+    style: 'britain',
+    MAP: MAP_BRITAIN,
+    outline: null,
+    hanzi: null,
+    fhanzi: null,
+    enemy: { d: FRANCE.d, label: FRANCE.label, discs: [508, 1096], sites: [[680, 1102], [740, 1120]] },
+    glyph: castle,
+  };
+}
+
+/** Silhouette de pagode, pour la Chine des Trois Royaumes. */
+function pagoda(x, y, s = 1) {
+  const t = (a, b) => `${(x + a * s).toFixed(1)},${(y + b * s).toFixed(1)}`;
+  const roof = (w, yb, yt) =>
+    `<path d="M${t(-w, yb)} Q${t(-w - 2.2, yb - 2.6)} ${t(-w + 0.6, yb - 1.6)} L${t(-w * 0.42, yt)} L${t(w * 0.42, yt)} L${t(w - 0.6, yb - 1.6)} Q${t(w + 2.2, yb - 2.6)} ${t(w, yb)} Z"/>`;
+  return `<g class="castle" fill="#37322b" opacity="0.82">
+    <path d="M${t(-5, 0)} L${t(-5, -7)} L${t(5, -7)} L${t(5, 0)} Z"/>
+    ${roof(14, -7, -11.5)}
+    <path d="M${t(-4.4, -11.5)} L${t(-4.4, -17)} L${t(4.4, -17)} L${t(4.4, -11.5)} Z"/>
+    ${roof(11, -17, -21)}
+    <path d="M${t(-3.6, -21)} L${t(-3.6, -26)} L${t(3.6, -26)} L${t(3.6, -21)} Z"/>
+    ${roof(8.5, -26, -29.6)}
+    <path d="M${t(-0.9, -29.6)} L${t(-0.9, -34.5)} L${t(0.9, -34.5)} L${t(0.9, -29.6)} Z"/>
+    <circle cx="${(x).toFixed(1)}" cy="${(y - 36 * s).toFixed(1)}" r="${(1.7 * s).toFixed(1)}"/>
+  </g>`;
 }
 
 /** Silhouette de château, comme celles semées sur la carte du jeu. */
@@ -161,7 +283,7 @@ function banner(x, y, angle, text, size = 23) {
 /* Le coffre de la réserve                                             */
 /* ------------------------------------------------------------------ */
 
-function chest(state) {
+function chest(state, G) {
   const { x, y, w, h } = CHEST;
   let s = `<g class="chest">
     <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="8" fill="#c5a26d" stroke="#5b431f" stroke-width="3" filter="url(#soft)"/>
@@ -173,7 +295,7 @@ function chest(state) {
     const cy = y + 78 + i * 62;
     const c = FACTION_INFO[f];
     const n = state.supply[f];
-    s += `<text x="${x + 22}" y="${cy - 12}" class="chest-lbl" style="font-size:14px">${c.fr}</text>
+    s += `<text x="${x + 22}" y="${cy - 12}" class="chest-lbl" style="font-size:14px">${G && G.fhanzi ? `<tspan class="cjk" style="font-size:17px">${G.fhanzi[f]}</tspan><tspan dx="5">${c.fr}</tspan>` : c.fr}</text>
       <text x="${x + w - 24}" y="${cy + 14}" text-anchor="end" class="chest-num">${n}</text>`;
     const mini = 13, gap = 3, perRow = 9;
     for (let k = 0; k < n; k++) {
@@ -196,7 +318,7 @@ function chest(state) {
 /* Les huit espaces numérotés et leurs cartes région                    */
 /* ------------------------------------------------------------------ */
 
-function trackColumn(state, hi) {
+function trackColumn(state, hi, G) {
   const contested = state.track.findIndex((t) => !t.faceDown);
   let s = `<g class="trackcol">`;
   s += `<text x="${TRACK.x + TRACK.w / 2}" y="${TRACK.y - 12}" text-anchor="middle" class="col-title">Ordre des luttes</text>`;
@@ -219,7 +341,7 @@ function trackColumn(state, hi) {
     } else {
       s += `<rect x="${cx}" y="${y + 8}" width="${cw}" height="64" rx="6" fill="#f3e7c8" stroke="#8d7346" stroke-width="2.5" filter="url(#soft)"/>
         <rect x="${cx + 6}" y="${y + 14}" width="16" height="52" rx="3" fill="${r.color}" stroke="${INK}" stroke-width="1.4"/>
-        <text x="${cx + 32}" y="${y + 47}" class="tname">${esc(r.fr)}</text>`;
+        <text x="${cx + 32}" y="${y + 47}" class="tname">${G && G.hanzi ? `<tspan class="cjk" style="font-size:21px">${G.hanzi[t.regionId]}</tspan><tspan dx="8">${esc(r.fr)}</tspan>` : esc(r.fr)}</text>`;
       if (i === contested) {
         s += `<rect x="${cx - 4}" y="${y + 4}" width="${cw + 8}" height="72" rx="8" fill="none" stroke="#a8231d" stroke-width="3"/>
           <text x="${TRACK.x + TRACK.w}" y="${y + 88}" text-anchor="end" class="tflag">région contestée</text>`;
@@ -264,6 +386,106 @@ function cubeLayout(n, cx, cy) {
  * @param {object} hi     surbrillance : { active, regions:Set, cubes:Set, selected:Set,
  *                        selectedCubes:string[], track:Set, trackPicked:Set }
  */
+/* --- décor à l'encre sépia, façon carte chinoise ancienne ------------ */
+
+const SEPIA = '#4a3419';
+
+/** Petit massif : deux ou trois pics à l'encre, hachures sur le flanc. */
+function inkMountain(x, y, k = 1) {
+  const t = (a, b) => `${(x + a * k).toFixed(1)},${(y + b * k).toFixed(1)}`;
+  return `<g fill="none" stroke="${SEPIA}" stroke-width="${(1.9 * k).toFixed(1)}" opacity="0.6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M${t(-26, 8)} Q${t(-16, -14)} ${t(-9, 4)}" />
+    <path d="M${t(-13, 8)} Q${t(0, -24)} ${t(13, 8)}" fill="#e9d9ab" fill-opacity="0.5"/>
+    <path d="M${t(7, 5)} Q${t(17, -12)} ${t(26, 8)}" />
+    <path d="M${t(-4, -8)} l ${(6 * k).toFixed(1)},${(10 * k).toFixed(1)}" stroke-width="${(1.1 * k).toFixed(1)}" opacity="0.7"/>
+    <path d="M${t(-9, -2)} l ${(5 * k).toFixed(1)},${(8 * k).toFixed(1)}" stroke-width="${(1.1 * k).toFixed(1)}" opacity="0.7"/>
+  </g>`;
+}
+
+/** Tour de guet de la Grande Muraille. */
+function wallTower(x, y) {
+  return `<g fill="#d9c07f" stroke="${SEPIA}" stroke-width="1.8">
+    <rect x="${(x - 7).toFixed(1)}" y="${(y - 9).toFixed(1)}" width="14" height="16" rx="1.5"/>
+    <path d="M ${(x - 8.5).toFixed(1)},${(y - 9).toFixed(1)} h 3.4 v -3.4 h 3.4 v 3.4 h 3.4 v -3.4 h 3.4 v 3.4 h 3.4"
+      fill="none" stroke-width="1.6"/>
+  </g>`;
+}
+
+/** Montagnes, fleuves et Grande Muraille crénelée, à partir des tracés projetés. */
+function inkDecor() {
+  let s = `<g class="inkdecor" pointer-events="none">`;
+
+  // Massifs (Qinling, Taihang, Nanling…) — traits d'encre par-dessus les teintes.
+  for (let i = 0; i < INK_DECOR.mountains.length; i++) {
+    const [mx, my] = INK_DECOR.mountains[i];
+    s += inkMountain(mx, my, 0.9 + (i % 3) * 0.14);
+  }
+
+  // Les deux grands fleuves : trait d'encre, filet d'eau claire au centre.
+  for (const d of INK_DECOR.rivers) {
+    s += `<path d="${d}" fill="none" stroke="${SEPIA}" stroke-width="4.6" opacity="0.55" stroke-linecap="round"/>`;
+    s += `<path d="${d}" fill="none" stroke="#cfe0d8" stroke-width="1.8" opacity="0.85" stroke-linecap="round"/>`;
+  }
+
+  // La Grande Muraille : gros trait, créneaux en tirets, tours de loin en loin.
+  const w = INK_DECOR.wall;
+  if (w && w.length > 1) {
+    const d = 'M ' + w.map(([px, py]) => `${px},${py}`).join(' L ');
+    s += `<path d="${d}" fill="none" stroke="${SEPIA}" stroke-width="7" opacity="0.75" stroke-linecap="round" stroke-linejoin="round"/>`;
+    s += `<path d="${d}" fill="none" stroke="#d9c07f" stroke-width="3.4" opacity="0.9" stroke-linejoin="round"/>`;
+    // Créneaux : petits ticks perpendiculaires, tous les ~26 px de tracé.
+    let acc = 0;
+    let ticks = '';
+    let towers = '';
+    let sinceTower = 55; // première tour assez tôt
+    for (let i = 1; i < w.length; i++) {
+      const [x1, y1] = w[i - 1], [x2, y2] = w[i];
+      const seg = Math.hypot(x2 - x1, y2 - y1);
+      acc += seg;
+      sinceTower += seg;
+      if (acc >= 26) {
+        acc = 0;
+        const nx = -(y2 - y1) / (seg || 1), ny = (x2 - x1) / (seg || 1);
+        ticks += `<line x1="${(x2 + nx * 3).toFixed(1)}" y1="${(y2 + ny * 3).toFixed(1)}" x2="${(x2 + nx * 8.5).toFixed(1)}" y2="${(y2 + ny * 8.5).toFixed(1)}"/>`;
+      }
+      if (sinceTower >= 110) {
+        sinceTower = 0;
+        towers += wallTower(x2, y2);
+      }
+    }
+    s += `<g stroke="${SEPIA}" stroke-width="2.6" opacity="0.7">${ticks}</g>`;
+    s += towers;
+  }
+
+  // Colonnes de caractères en mer de l'Est, comme sur les cartes anciennes :
+  // le titre 三国之图 (« Carte des Trois Royaumes ») dans son cartouche,
+  // flanqué des trois royaumes 魏蜀吴 en colonne plus discrète.
+  s += inkColumn(737, 425, '三国之图', 46, true);
+  s += inkColumn(671, 452, '魏蜀吴', 30, false);
+
+  s += `</g>`;
+  return s;
+}
+
+/** Colonne verticale de caractères à l'encre, avec ou sans cartouche bordé. */
+function inkColumn(cx, top, chars, size, boxed) {
+  const step = size * 1.28;
+  let s = '';
+  if (boxed) {
+    const w = size + 26, h = chars.length * step + 26;
+    s += `<rect x="${cx - w / 2}" y="${top - size - 4}" width="${w}" height="${h}" rx="3"
+        fill="#e9d3a0" fill-opacity="0.55" stroke="${SEPIA}" stroke-width="2.6" opacity="0.85"/>
+      <rect x="${cx - w / 2 + 5}" y="${top - size + 1}" width="${w - 10}" height="${h - 10}"
+        fill="none" stroke="${SEPIA}" stroke-width="1" opacity="0.55"/>`;
+  }
+  s += `<g class="cjk" fill="${SEPIA}" opacity="${boxed ? 0.92 : 0.72}" style="font-size:${size}px">`;
+  for (let i = 0; i < chars.length; i++) {
+    s += `<text x="${cx}" y="${top + i * step}" text-anchor="middle">${chars[i]}</text>`;
+  }
+  s += `</g>`;
+  return s;
+}
+
 export function renderBoard(state, hi = {}) {
   const H = {
     active: !!hi.active,
@@ -276,26 +498,40 @@ export function renderBoard(state, hi = {}) {
     arrowFrom: hi.arrowFrom || null,   // région source : flèches vers les cibles possibles
   };
 
+  const G = geo(state);
+  const MAP = G.MAP;                       // géométrie du thème de la partie
+  const enemyName = (THEMES[state.themeId] || THEMES.britain).enemy.name;
+
   let s = `<svg viewBox="${VIEWBOX}" class="board-svg" xmlns="http://www.w3.org/2000/svg">`;
   s += defs();
-  s += vellum();
-  s += frame();
+  s += vellum(G);
+  s += frame(G);
 
   /* --- la carte, dans son cadre ------------------------------------ */
   s += `<g clip-path="url(#mapClip)">`;
 
+  // Silhouette de la Chine d'aujourd'hui, en filigrane : l'empire Han
+  // ressort dessus, et le pays est reconnaissable au premier regard.
+  if (G.outline) {
+    s += `<path d="${G.outline}" fill="#e2d5ae" stroke="#9c8a5e" stroke-width="1.6"
+      stroke-dasharray="7 5" opacity="0.75"/>`;
+  }
+
   // Ombres portées des terres, en une passe pour qu'aucune ne tombe sur une voisine.
   s += `<g filter="url(#landShadow)" opacity="0.34">`;
   for (const id of REGION_IDS) s += `<path d="${MAP[id].d}" fill="#4a3418" transform="translate(6 9)"/>`;
-  s += `<path d="${FRANCE.d}" fill="#4a3418" transform="translate(6 9)"/>`;
+  s += `<path d="${G.enemy.d}" fill="#4a3418" transform="translate(6 9)"/>`;
   s += `</g>`;
 
-  // France
+  // Le domaine de l'envahisseur (France ou steppe des Jin selon le thème).
   s += `<g class="france">
-    <path d="${FRANCE.d}" fill="none" stroke="${GOLD}" stroke-width="9" stroke-linejoin="round"/>
-    <path d="${FRANCE.d}" fill="${FRANCE_FILL}" stroke="#31384a" stroke-width="2"/>
-    ${castle(680, 1102, 0.8)}${castle(740, 1120, 0.8)}
-    ${banner(688, 1058, -4, 'France', 20)}
+    <path d="${G.enemy.d}" fill="none" stroke="${GOLD}" stroke-width="9" stroke-linejoin="round"/>
+    <path d="${G.enemy.d}" fill="${FRANCE_FILL}" stroke="#31384a" stroke-width="2"/>
+    ${G.style === 'sanguo' ? `<path d="${G.enemy.d}" fill="#dcbb7e" opacity="0.42" pointer-events="none"/>` : ''}
+    ${G.enemy.sites.map(([sx, sy]) => G.glyph(sx, sy, 0.8)).join('')}
+    ${G.enemy.hanzi
+      ? plaque(G.enemy.label[0], G.enemy.label[1], G.enemy.hanzi, enemyName)
+      : banner(G.enemy.label[0], G.enemy.label[1], G.enemy.label[2] || -4, enemyName, 20)}
   </g>`;
 
   // Régions : dorure puis remplissage, région par région.
@@ -310,20 +546,31 @@ export function renderBoard(state, hi = {}) {
     s += `<g class="${cls}" data-region="${id}">
       <path class="rg-gold" d="${MAP[id].d}" fill="none" stroke="${GOLD}" stroke-width="10" stroke-linejoin="round"/>
       <path class="rg-shape" d="${MAP[id].d}" fill="${info.color}" stroke="${shade(info.color, 0.45)}" stroke-width="2"/>`;
+    if (G.style === 'sanguo') {
+      // Voile de parchemin : les teintes restent lisibles mais patinées.
+      s += `<path d="${MAP[id].d}" fill="#dcbb7e" opacity="0.42" pointer-events="none"/>`;
+    }
     if (isHi || isSel) {
       s += `<path class="rg-ring" d="${MAP[id].d}" fill="none"
         stroke="${isSel ? '#2b4d8f' : '#fffbe6'}" stroke-width="5" stroke-linejoin="round"/>`;
     }
-    for (const [cx, cy] of MAP[id].castles) s += castle(cx, cy, 0.9);
+    for (const [cx, cy] of MAP[id].castles) s += G.glyph(cx, cy, 0.9);
     s += `<path class="rg-hit" d="${MAP[id].d}" fill="transparent"/>`;
     s += `</g>`;
   }
 
-  // Banderoles au-dessus de tout, pour rester lisibles.
+  // Décor à l'encre (Chine) : montagnes calligraphiées, fleuves, Grande Muraille.
+  if (G.style === 'sanguo') s += inkDecor();
+
+  // Étiquettes au-dessus de tout, pour rester lisibles :
+  // cartouches à caractères en Chine, banderoles de parchemin en Bretagne.
   for (const id of REGION_IDS) {
     const [lx, ly, la] = MAP[id].label;
     const dim = H.active && !H.regions.has(id) && !H.selected.has(id);
-    s += `<g class="bannerwrap ${dim ? 'dim' : ''}">${banner(lx, ly, la, REGIONS[id].fr)}</g>`;
+    const label = G.hanzi
+      ? plaque(lx, ly, G.hanzi[id], REGIONS[id].fr)
+      : banner(lx, ly, la, REGIONS[id].fr);
+    s += `<g class="bannerwrap ${dim ? 'dim' : ''}">${label}</g>`;
   }
 
   // Pions : cubes, ou disque de contrôle une fois la région attribuée.
@@ -365,10 +612,11 @@ export function renderBoard(state, hi = {}) {
   s += `<g class="instab">`;
   for (let i = 0; i < 3; i++) {
     const placed = i < state.instability;
-    s += `<circle cx="${508 + i * 40}" cy="${1096}" r="14" fill="${placed ? '#463424' : '#c9bd9c'}"
+    const dx = G.enemy.discs[0] + i * 40, dy = G.enemy.discs[1];
+    s += `<circle cx="${dx}" cy="${dy}" r="14" fill="${placed ? '#463424' : '#c9bd9c'}"
       stroke="${placed ? '#241a0c' : '#6b5c3d'}" stroke-width="${placed ? 2.5 : 1.6}"
       stroke-dasharray="${placed ? 'none' : '4 3'}" opacity="${placed ? 1 : 0.75}"/>`;
-    if (placed) s += `<text x="${508 + i * 40}" y="${1102}" text-anchor="middle" class="disc-mark" style="font-size:15px">!</text>`;
+    if (placed) s += `<text x="${dx}" y="${dy + 6}" text-anchor="middle" class="disc-mark" style="font-size:15px">!</text>`;
   }
   s += `</g>`;
 
@@ -411,8 +659,8 @@ export function renderBoard(state, hi = {}) {
     fill="none" stroke="${GOLD_DARK}" stroke-width="2" opacity="0.55"/>`;
 
   /* --- colonne de droite ------------------------------------------- */
-  s += chest(state);
-  s += trackColumn(state, H);
+  s += chest(state, G);
+  s += trackColumn(state, H, G);
 
   s += `</svg>`;
   return s;
