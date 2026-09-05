@@ -13,11 +13,98 @@
 
 export const FACTIONS = ['scottish', 'welsh', 'english'];
 
-export const FACTION_INFO = {
-  scottish: { fr: 'Écossais', adj: 'écossaise', color: '#2f5fa6', light: '#4f83cc' },
-  welsh:    { fr: 'Gallois',  adj: 'galloise',  color: '#b8302c', light: '#d9534f' },
-  english:  { fr: 'Anglais',  adj: 'anglaise',  color: '#e3b208', light: '#f2ce3d' },
+/*
+ * THÈMES. Les identifiants internes (scottish/welsh/english, moray/…/devon)
+ * sont des « emplacements » du graphe de jeu, jamais affichés : chaque thème
+ * fournit les noms, la carte restant identique dans sa structure — même
+ * graphe d'adjacences, mêmes couleurs par emplacement, même équilibre.
+ */
+export const THEMES = {
+  britain: {
+    title: 'Angleterre médiévale',
+    factions: {
+      scottish: { fr: 'Écossais', low: 'écossais', adj: 'écossais' },
+      welsh:    { fr: 'Gallois',  low: 'gallois',  adj: 'gallois' },
+      english:  { fr: 'Anglais',  low: 'anglais',  adj: 'anglais' },
+    },
+    regions: {
+      moray: 'Moray', strathclyde: 'Strathclyde', lancaster: 'Lancaster',
+      northumbria: 'Northumbria', gwynedd: 'Gwynedd', warwick: 'Warwick',
+      essex: 'Essex', devon: 'Devon',
+    },
+    supportName: (f) => `Soutien ${THEMES.britain.factions[f].low}`,
+    enemy: {
+      name: 'France',
+      invasionLog: '🇫🇷 Trois régions instables : les Français envahissent la Bretagne !',
+      invasionTitle: 'Invasion française',
+      invasionFlavor: "Trois régions sombrent dans l'instabilité : les Français débarquent. Le chef capable d'unir les factions contre l'envahisseur ceindra la couronne.",
+      crownTitle: 'Couronnement',
+      crownFlavor: 'Les huit régions ont choisi leur camp. La faction la plus puissante fait roi son champion.',
+    },
+  },
+  sanguo: {
+    title: 'Chine des Trois Royaumes',
+    factions: {
+      scottish: { fr: 'Wei', low: 'Wei', adj: 'du Wei', hanzi: '魏' },
+      welsh:    { fr: 'Shu', low: 'Shu', adj: 'du Shu', hanzi: '蜀' },
+      english:  { fr: 'Wu',  low: 'Wu',  adj: 'du Wu',  hanzi: '吴' },
+    },
+    regions: {
+      moray: 'Youzhou', strathclyde: 'Jizhou', lancaster: 'Sili',
+      northumbria: 'Yuzhou', gwynedd: 'Yizhou', warwick: 'Jingzhou',
+      essex: 'Yangzhou', devon: 'Jiaozhou',
+    },
+    hanzi: {
+      moray: '幽州', strathclyde: '冀州', lancaster: '司隶',
+      northumbria: '豫州', gwynedd: '益州', warwick: '荆州',
+      essex: '扬州', devon: '交州',
+    },
+    supportName: (f) => `Soutien ${THEMES.sanguo.factions[f].adj}`,
+    enemy: {
+      name: 'Jin',
+      hanzi: '晋',
+      invasionLog: '⚔ Trois provinces instables : la dynastie Jin s\'empare de l\'empire !',
+      invasionTitle: 'Usurpation des Jin',
+      invasionFlavor: "Trois provinces sombrent dans le chaos : les Sima proclament la dynastie Jin et balaient les Trois Royaumes. Le stratège capable d'unir les cours contre l'usurpateur recevra le Mandat du Ciel.",
+      crownTitle: 'Mandat du Ciel',
+      crownFlavor: 'Les huit provinces ont choisi leur camp. Le royaume le plus puissant fait empereur son champion.',
+    },
+  },
 };
+
+export const FACTION_INFO = {
+  scottish: { fr: 'Écossais', low: 'écossais', adj: 'écossais', color: '#2f5fa6', light: '#4f83cc' },
+  welsh:    { fr: 'Gallois',  low: 'gallois',  adj: 'gallois',  color: '#b8302c', light: '#d9534f' },
+  english:  { fr: 'Anglais',  low: 'anglais',  adj: 'anglais',  color: '#e3b208', light: '#f2ce3d' },
+};
+
+let currentTheme = 'britain';
+
+/**
+ * Applique un thème en réécrivant les noms affichés (factions, régions,
+ * cartes). Couleurs et mécanique ne changent jamais. Appelé par createGame
+ * et avant tout rendu ou résolution de coup côté serveur.
+ */
+export function applyTheme(themeId) {
+  const T = THEMES[themeId] ? themeId : 'britain';
+  if (T === currentTheme) return T;
+  currentTheme = T;
+  const th = THEMES[T];
+  for (const f of FACTIONS) {
+    FACTION_INFO[f].fr = th.factions[f].fr;
+    FACTION_INFO[f].low = th.factions[f].low;
+    FACTION_INFO[f].adj = th.factions[f].adj;
+  }
+  for (const r of REGION_IDS) REGIONS[r].fr = th.regions[r];
+  for (const f of FACTIONS) {
+    const card = CARDS[f + '_support'];
+    const home = th.regions[HOME_REGION[f]];
+    card.fr = th.supportName(f);
+    card.text = `Placez deux suivants ${th.factions[f].adj} de la réserve dans une région qui borde une région contrôlée par les ${th.factions[f].fr}. S'il n'y a ni disque de contrôle ni disque d'instabilité à ${home}, vous pouvez à la place placer les suivants dans une région bordant ${home}.`;
+  }
+  CARDS.assemble.text = `Placez un suivant ${th.factions.scottish.adj}, un suivant ${th.factions.welsh.adj} et un suivant ${th.factions.english.adj} de la réserve dans une ou plusieurs régions au choix. S'il n'y a aucun suivant d'une faction dans la réserve, ne placez pas ce suivant ; placez tout de même ceux des autres factions.`;
+  return T;
+}
 
 /** Les huit régions, avec la couleur du plateau imprimé. */
 export const REGIONS = {
@@ -162,11 +249,13 @@ export function createGame(playerDefs, seed = 12345, opts = {}) {
   const n = playerDefs.length;
   if (n !== 2 && n !== 3 && n !== 4) throw new Error('2 à 4 joueurs.');
   const teams = n === 4 && opts.teams !== false;
+  const themeId = applyTheme(opts.theme || 'britain');
 
   const state = {
     seed,
     playerCount: n,
     teams,
+    themeId,
     phase: 'action', // 'action' | 'summon' | 'finished'
     regions: {},
     supply: emptyFollowers(),
@@ -180,6 +269,7 @@ export function createGame(playerDefs, seed = 12345, opts = {}) {
     factionWinOrder: [],           // ordre des victoires en lutte de pouvoir
     handEmptyOrder: [],            // sièges, dans l'ordre où ils ont vidé leur main
     lastSwap: null,                // anti « annulation » de Manœuvre / Contre-manœuvre
+    clock: { perSeat: playerDefs.map(() => 0), turnStart: Date.now() },
     actionCounter: 0,
     struggleCount: 0,
     pendingSummonSeat: null,
@@ -431,6 +521,14 @@ export function applyMove(state, seat, move) {
   if (state.phase === 'finished') throw new Error('La partie est terminée.');
   if (seat !== state.current) throw new Error("Ce n'est pas votre tour.");
 
+  // Chronomètre : le temps écoulé depuis le dernier coup est porté au
+  // compte du joueur dont c'était le tour.
+  if (state.clock) {
+    const now = Date.now();
+    state.clock.perSeat[seat] += Math.max(0, now - state.clock.turnStart);
+    state.clock.turnStart = now;
+  }
+
   if (state.phase === 'summon') {
     if (move.type !== 'summon') throw new Error('Vous devez invoquer un suivant à votre cour.');
     return doSummon(state, seat, move);
@@ -494,7 +592,7 @@ function doSummon(state, seat, move) {
   state.regions[region].followers[faction] -= 1;
   const p = state.players[seat];
   p.court[faction] += 1;
-  pushLog(state, `${p.name} invoque un suivant ${FACTION_INFO[faction].fr.toLowerCase()} de ${REGIONS[region].fr} à sa cour.`, 'summon');
+  pushLog(state, `${p.name} invoque un suivant ${FACTION_INFO[faction].low} de ${REGIONS[region].fr} à sa cour.`, 'summon');
 
   state.phase = 'action';
   state.pendingSummonSeat = null;
@@ -538,7 +636,7 @@ function resolveSupport(state, faction, params) {
   if (!targets.includes(r)) throw new Error('Région cible non autorisée pour cette carte Soutien.');
   state.supply[faction] -= available;
   state.regions[r].followers[faction] += available;
-  return `${available} suivant${available > 1 ? 's' : ''} ${FACTION_INFO[faction].adj}${available > 1 ? 's' : ''} placé${available > 1 ? 's' : ''} en ${REGIONS[r].fr}.`;
+  return `${available} suivant${available > 1 ? 's' : ''} ${FACTION_INFO[faction].adj} placé${available > 1 ? 's' : ''} en ${REGIONS[r].fr}.`;
 }
 
 function resolveAssemble(state, params) {
@@ -549,10 +647,10 @@ function resolveAssemble(state, params) {
     if (state.supply[f] <= 0) continue;
     if (open.length === 0) continue;
     const r = placements[f];
-    if (!open.includes(r)) throw new Error(`Région invalide pour le suivant ${FACTION_INFO[f].fr.toLowerCase()}.`);
+    if (!open.includes(r)) throw new Error(`Région invalide pour le suivant ${FACTION_INFO[f].low}.`);
     state.supply[f] -= 1;
     state.regions[r].followers[f] += 1;
-    done.push(`${FACTION_INFO[f].fr.toLowerCase()} → ${REGIONS[r].fr}`);
+    done.push(`${FACTION_INFO[f].low} → ${REGIONS[r].fr}`);
   }
   return done.length ? `Rassemblement : ${done.join(', ')}.` : 'Réserve vide : action sans effet.';
 }
@@ -692,9 +790,10 @@ function endGame(state, kind) {
   state.ending = kind;
   state.result = kind === 'invasion' ? scoreInvasion(state) : scoreCoronation(state);
   state.result.kind = kind;
+  const th = THEMES[state.themeId] || THEMES.britain;
   pushLog(state, kind === 'invasion'
-    ? '🇫🇷 Trois régions instables : les Français envahissent la Bretagne !'
-    : '👑 Les huit régions sont attribuées : place au couronnement !', 'end');
+    ? th.enemy.invasionLog
+    : `👑 Les huit régions sont attribuées : place au ${th.enemy.crownTitle.toLowerCase()} !`, 'end');
   pushLog(state, state.result.summary, 'end');
 }
 
@@ -761,7 +860,7 @@ function scoreCoronation(state) {
   if (state.teams) winnerSeats = rows.filter((r) => r.team === champion.team).map((r) => r.seat);
   const winnerNames = winnerSeats.map((s) => state.players[s].name);
 
-  const summary = `Couronnement — faction la plus puissante : ${FACTION_INFO[first].fr} (${controlled[first]} région${controlled[first] > 1 ? 's' : ''}). ${winnerNames.join(' & ')} l'emporte${winnerNames.length > 1 ? 'nt' : ''} avec ${champion.first} suivant${champion.first > 1 ? 's' : ''} ${FACTION_INFO[first].adj}${champion.first > 1 ? 's' : ''} à la cour${tiebreak ? ` (départage : ${tiebreak})` : ''}.`;
+  const summary = `Couronnement — faction la plus puissante : ${FACTION_INFO[first].fr} (${controlled[first]} région${controlled[first] > 1 ? 's' : ''}). ${winnerNames.join(' & ')} l'emporte${winnerNames.length > 1 ? 'nt' : ''} avec ${champion.first} suivant${champion.first > 1 ? 's' : ''} ${FACTION_INFO[first].adj} à la cour${tiebreak ? ` (départage : ${tiebreak})` : ''}.`;
   return { rows, ranked, controlled, winners: winnerSeats, summary, tiebreak };
 }
 
@@ -772,6 +871,17 @@ function scoreCoronation(state) {
 export function viewFor(state, seat) {
   const v = JSON.parse(JSON.stringify(state));
   v.you = seat;
+  // La chronique est tronquée au dernier tour de table : l'historique complet
+  // permettrait de reconstituer les défausses adverses, ce que le livret
+  // interdit (« vous ne pouvez pas examiner les défausses des autres joueurs »).
+  const keep = state.playerCount * 2 + 4;
+  if (v.log.length > keep) v.log = v.log.slice(-keep);
+  // Le client n'a pas la même horloge que le serveur : on lui envoie le temps
+  // déjà écoulé sur le tour en cours plutôt qu'un horodatage.
+  if (v.clock) {
+    v.clock.turnElapsed = state.phase === 'finished' ? 0 : Math.max(0, Date.now() - state.clock.turnStart);
+    delete v.clock.turnStart;
+  }
   v.players = v.players.map((p) => {
     if (p.seat === seat) return p;
     // Main secrète, et seule la dernière carte de la défausse est visible.

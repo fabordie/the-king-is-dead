@@ -4,7 +4,7 @@
  * (cubes, flèches, régions), banderole de titre. Dessins originaux.
  */
 
-import { CARDS, FACTION_INFO } from './game.js';
+import { CARDS, FACTION_INFO, THEMES } from './game.js';
 
 const INK = '#3a2b16';
 const RUBRIC = '#a8231d';
@@ -138,20 +138,31 @@ function diagram(cardId) {
 
 /**
  * Face de carte : cadre enluminé + panneau du schéma + banderole de titre.
- * Le texte de règle reste en HTML sous la carte (lisibilité).
+ * Les cartes de faction portent un écu (Bretagne) ou un sceau à caractère
+ * chinois (Trois Royaumes). Le texte de règle reste en HTML sous la carte.
  */
-export function cardFace(cardId) {
+export function cardFace(cardId, themeId = 'britain') {
   const c = CARDS[cardId];
   const title = c.fr;
   const size = title.length > 14 ? 15 : 17;
   const w = title.length * size * 0.58 + 16;
-  const shield = c.faction
-    ? `<g transform="translate(262,30)">
+  let shield = '';
+  if (c.faction && themeId === 'sanguo') {
+    // Sceau (印) cinabre frappé du caractère du royaume.
+    const hz = THEMES.sanguo.factions[c.faction].hanzi;
+    shield = `<g transform="translate(248,26) rotate(3)">
+        <rect width="38" height="38" rx="5" fill="#b3382c" stroke="#241a0c" stroke-width="2"/>
+        <rect x="3.5" y="3.5" width="31" height="31" rx="3" fill="none" stroke="#f0dfae" stroke-width="1.6" opacity="0.85"/>
+        <text x="19" y="29" text-anchor="middle" class="cjk" style="font-size:25px;fill:#f6ecd0">${hz}</text>
+        <rect x="7" y="-6" width="24" height="8" rx="2" fill="${FACTION_INFO[c.faction].color}" stroke="#241a0c" stroke-width="1.4"/>
+      </g>`;
+  } else if (c.faction) {
+    shield = `<g transform="translate(262,30)">
         <path d="M 0,-11 h 22 v 14 q 0,12 -11,17 q -11,-5 -11,-17 Z"
           fill="${FACTION_INFO[c.faction].color}" stroke="#241a0c" stroke-width="2"/>
         <path d="M 4,-2 l 3,-4 2,3 2,-3 2,3 2,-3 3,4 v 3 h -14 Z" fill="${GOLD}" stroke="#241a0c" stroke-width="0.8"/>
-      </g>`
-    : '';
+      </g>`;
+  }
 
   return `<svg viewBox="0 0 300 236" class="card-art" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
     <rect x="2" y="2" width="296" height="232" rx="8" fill="${PARCH}" stroke="${RUBRIC}" stroke-width="4"/>

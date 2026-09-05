@@ -11,6 +11,7 @@
 import {
   createGame, applyMove, viewFor, cardChoices, summonSources, contestedIndex,
   CARDS, REGIONS, REGION_IDS, FACTIONS, FACTION_INFO, ADJACENCY, factionRanking,
+  applyTheme, THEMES,
 } from './game.js';
 import { renderBoard, neighboursLabel } from './board.js';
 import { cardFace } from './cards.js';
@@ -68,7 +69,7 @@ $('#btnJoin').onclick = () => {
 $('#btnLeave').onclick = () => { location.hash = ''; location.reload(); };
 $('#btnQuit').onclick = () => { if (confirm('Quitter la partie ?')) { location.hash = ''; location.reload(); } };
 
-$('#btnStartOnline').onclick = () => sendWs({ t: 'start', teams: $('#optTeams').checked });
+$('#btnStartOnline').onclick = () => sendWs({ t: 'start', teams: $('#optTeams').checked, theme: $('#optTheme').value });
 
 function hotseatSync() {
   const n = +$('#hcount').value;
@@ -95,7 +96,7 @@ $('#btnStartHotseat').onclick = () => {
   });
   mode = 'hotseat';
   full = createGame(names.map((nm, i) => ({ id: 'p' + i, name: nm })), (Math.random() * 1e9) | 0,
-    { teams: $('#hteams').value === '1' });
+    { teams: $('#hteams').value === '1', theme: $('#htheme').value });
   revealed = null;
   show('#lobby', false);
   $('#app').classList.add('on');
@@ -144,18 +145,57 @@ $('#btnReveal').onclick = () => { revealed = full.current; show('#veil', false);
 /* Connexion WebSocket                                                 */
 /* ------------------------------------------------------------------ */
 
+/* --- reconnexion automatique ---------------------------------------- */
+
+let reconnectTimer = null;
+let reconnectDelay = 900;
+
+function setConn(state) {
+  const el = $('#chipConn');
+  if (!el) return;
+  if (mode !== 'online') { el.style.display = 'none'; return; }
+  el.style.display = '';
+  if (state === 'on') {
+    el.textContent = '● en ligne';
+    el.style.color = '#9fd49a';
+  } else {
+    el.textContent = '↻ reconnexion…';
+    el.style.color = '#f0b45f';
+  }
+}
+
+/** Reconnexion avec le jeton de reprise gardé dans l'adresse de l'onglet. */
+function scheduleReconnect(immediate = false) {
+  setConn('off');
+  const h = location.hash.replace(/^#/, '');
+  if (!h.includes(':')) return;                 // rien à reprendre
+  if (reconnectTimer) { if (!immediate) return; clearTimeout(reconnectTimer); }
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    const [code, token] = location.hash.replace(/^#/, '').split(':');
+    reconnectDelay = Math.min(reconnectDelay * 1.6, 10000);
+    connect(() => sendWs({ t: 'rejoin', code, token }));
+  }, immediate ? 50 : reconnectDelay);
+}
+
+// Écran rallumé, onglet remis au premier plan : on retente tout de suite.
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && mode === 'online' && (!ws || ws.readyState > 1)) {
+    reconnectDelay = 900;
+    scheduleReconnect(true);
+  }
+});
+
 function connect(then) {
   if (ws && ws.readyState === WebSocket.OPEN) return then();
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   ws = new WebSocket(`${proto}//${location.host}`);
-  ws.onopen = () => then();
+  ws.onopen = () => { reconnectDelay = 900; setConn('on'); then(); };
   ws.onmessage = (ev) => handleServer(JSON.parse(ev.data));
-  ws.onclose = () => {
-    if (mode === 'online') {
-      $('#prompt').innerHTML = '<span class="err">Connexion perdue. Rechargez la page pour reprendre la partie.</span>';
-    }
+  ws.onclose = () => { if (mode === 'online' || room) scheduleReconnect(); };
+  ws.onerror = () => {
+    if (mode !== 'online') $('#homeErr').textContent = 'Impossible de joindre le serveur.';
   };
-  ws.onerror = () => { $('#homeErr').textContent = "Impossible de joindre le serveur."; };
 }
 
 function sendWs(msg) {
@@ -184,8 +224,11 @@ function handleServer(msg) {
     }
     return;
   }
+  if (msg.t === 'chat') { chatLog.push(msg); renderChat(); return; }
+  if (msg.t === 'chatlog') { chatLog = msg.log || []; renderChat(); return; }
   if (msg.t === 'state') {
     mode = 'online';
+    setConn('on');
     view = msg.view;
     mySeat = msg.view.you;
     sel = null;
@@ -357,14 +400,69 @@ function submit(move) {
   refresh();
 }
 
+/* --- messagerie ------------------------------------------------------- */
+
+let chatLog = [];
+
+function renderChat() {
+  const el = $('#chatlog');
+  if (!el) return;
+  el.innerHTML = chatLog.map((m) =>
+    `<div><strong>${esc(m.from)}</strong> ${esc(m.text)}</div>`).join('')
+    || '<em style="color:#8a744e">Aucun message pour l\'instant.</em>';
+  el.scrollTop = el.scrollHeight;
+}
+
+function sendChat() {
+  const input = $('#chatIn');
+  const text = (input.value || '').trim();
+  if (!text) return;
+  sendWs({ t: 'chat', text });
+  input.value = '';
+  input.focus();
+}
+$('#chatSend').onclick = sendChat;
+$('#chatIn').addEventListener('keydown', (e) => { if (e.key === 'Enter') sendChat(); });
+
+/* --- chronomètre cumulé ------------------------------------------------ */
+
+let stateAt = Date.now();   // instant de réception de la vue affichée
+
+function fmtClock(ms) {
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  return m ? `${m} min ${String(s % 60).padStart(2, '0')} s` : `${s} s`;
+}
+
+function clockFor(seat) {
+  if (!view || !view.clock) return 0;
+  let ms = view.clock.perSeat[seat] || 0;
+  if (view.phase !== 'finished' && seat === view.current) {
+    ms += (view.clock.turnElapsed || 0) + (Date.now() - stateAt);
+  }
+  return ms;
+}
+
+function updateClocks() {
+  if (!view || !view.clock) return;
+  document.querySelectorAll('.ptime').forEach((el) => {
+    el.textContent = '⏱ ' + fmtClock(clockFor(+el.dataset.seat));
+  });
+}
+setInterval(updateClocks, 1000);
+
 function render() {
   if (!view) return;
+  applyTheme(view.themeId);
+  stateAt = Date.now();
+  $('#chatPanel').style.display = mode === 'online' ? '' : 'none';
   renderChips();
   renderBoardPane();
   renderPlayers();
   renderLog();
   renderHand();
   renderPrompt();
+  updateClocks();
   if (view.phase === 'finished') showEnd();
 }
 
@@ -441,9 +539,10 @@ function renderPlayers() {
       <div class="court">${FACTIONS.map((f) => {
         const n = p.court[f];
         const cubes = Array.from({ length: n }, () => `<span class="mini-cube ${f}"></span>`).join('');
-        return `<span class="stack" title="${n} ${FACTION_INFO[f].fr.toLowerCase()}">${cubes || `<span class="mini-none"></span>`}<span class="mini-count">${n}</span></span>`;
+        return `<span class="stack" title="${n} ${FACTION_INFO[f].low}">${cubes || `<span class="mini-none"></span>`}<span class="mini-count">${n}</span></span>`;
       }).join('')}</div>
       <div class="meta">
+        <span class="ptime" data-seat="${p.seat}"></span>
         <span>main : ${handN}</span>
         <span>dernière action : ${esc(dn)}${discN > 1 ? ` (${discN} jouées)` : ''}</span>
         ${p.negotiationDisc ? '<span><span class="discbadge"></span> disque</span>' : ''}
@@ -456,7 +555,7 @@ function renderPlayers() {
 
 function renderLog() {
   const el = $('#log');
-  el.innerHTML = view.log.slice(-80).map((l) => `<div class="${l.kind}">${esc(l.text)}</div>`).join('');
+  el.innerHTML = view.log.map((l) => `<div class="${l.kind}">${esc(l.text)}</div>`).join('');
   el.scrollTop = el.scrollHeight;
 }
 
@@ -488,7 +587,7 @@ function renderHand() {
     const picked = sel && sel.handIndex === i;
     return `<div class="card ${picked ? 'picked' : ''} ${active ? '' : 'disabled'} ${active && !fx ? 'nofx' : ''}"
         data-i="${i}" title="${esc(c.fr)} — ${esc(c.text)}">
-      ${cardFace(card)}
+      ${cardFace(card, view.themeId)}
       <p>${esc(c.text)}</p>
       ${active && !fx ? '<span class="nofx-tag">aucun effet possible</span>' : ''}
     </div>`;
@@ -516,7 +615,7 @@ function renderPrompt() {
     const done = sel && sel.type === 'summon' && sel.region;
     setPrompt(`<span class="lead">Invoquez un suivant à votre cour.</span>` +
       `<span class="hint">Cliquez un cube sur le plateau — jamais dans la réserve.</span>` +
-      (done ? ` <button class="primary" data-act="confirm">Invoquer ce ${FACTION_INFO[sel.faction].fr.toLowerCase()} de ${REGIONS[sel.region].fr}</button>
+      (done ? ` <button class="primary" data-act="confirm">Invoquer ce ${FACTION_INFO[sel.faction].low} de ${REGIONS[sel.region].fr}</button>
                <button data-act="cancel">Changer</button>` : ''));
     return;
   }
@@ -690,14 +789,14 @@ function selPrompt() {
       return `${head}<span class="hint">Cette action n'a aucun effet possible dans la position actuelle. Vous pouvez tout de même la jouer — vous invoquerez alors un suivant à votre cour.</span>${go}`;
     case 'support': {
       if (!sel.region) return `${head}<span class="hint">Choisissez la région où placer ${sel.count} suivant${sel.count > 1 ? 's' : ''} ${FACTION_INFO[sel.faction].adj}${sel.count > 1 ? 's' : ''} (régions en surbrillance).</span>`;
-      return `${head}<span class="hint">${sel.count} ${FACTION_INFO[sel.faction].fr.toLowerCase()} → ${REGIONS[sel.region].fr}.</span>${go}`;
+      return `${head}<span class="hint">${sel.count} ${FACTION_INFO[sel.faction].low} → ${REGIONS[sel.region].fr}.</span>${go}`;
     }
     case 'assemble': {
       if (sel.step < sel.queue.length) {
         const f = sel.queue[sel.step];
-        return `${head}<span class="hint">Où placer le suivant ${FACTION_INFO[f].fr.toLowerCase()} ? (${sel.step + 1}/${sel.queue.length})</span>`;
+        return `${head}<span class="hint">Où placer le suivant ${FACTION_INFO[f].low} ? (${sel.step + 1}/${sel.queue.length})</span>`;
       }
-      const d = Object.entries(sel.placements).map(([f, r]) => `${FACTION_INFO[f].fr.toLowerCase()} → ${REGIONS[r].fr}`).join(', ');
+      const d = Object.entries(sel.placements).map(([f, r]) => `${FACTION_INFO[f].low} → ${REGIONS[r].fr}`).join(', ');
       return `${head}<span class="hint">${d}.</span>${go}`;
     }
     case 'negotiate': {
@@ -761,9 +860,10 @@ function showEnd() {
   const winners = new Set(r.winners);
   let html = '';
 
+  const meta = (THEMES[view.themeId] || THEMES.britain).enemy;
   if (r.kind === 'invasion') {
-    html += `<h2>Invasion française</h2>
-      <p class="sub">Trois régions sombrent dans l'instabilité : les Français débarquent. Le chef capable d'unir les factions contre l'envahisseur ceindra la couronne.</p>
+    html += `<h2>${esc(meta.invasionTitle)}</h2>
+      <p class="sub">${esc(meta.invasionFlavor)}</p>
       <p>Le vainqueur est celui qui réunit le plus d'<strong>ensembles complets</strong> — un suivant de chaque faction.</p>
       <table class="result-table"><tr><th>Équipe</th><th>Écossais</th><th>Gallois</th><th>Anglais</th><th>Ensembles</th></tr>`;
     for (const row of r.rows) {
@@ -775,8 +875,8 @@ function showEnd() {
     html += `</table>`;
   } else {
     const { ranked, controlled } = r;
-    html += `<h2>Couronnement</h2>
-      <p class="sub">Les huit régions ont choisi leur camp. La faction la plus puissante fait roi son champion.</p>
+    html += `<h2>${esc(meta.crownTitle)}</h2>
+      <p class="sub">${esc(meta.crownFlavor)}</p>
       <div class="rank-row">${ranked.map((f, i) =>
         `<div class="rank"><span class="pos">${i + 1}</span><span class="pip ${f}"></span>${FACTION_INFO[f].fr}
           <small>&nbsp;${controlled[f]} région${controlled[f] > 1 ? 's' : ''}</small></div>`).join('')}</div>
